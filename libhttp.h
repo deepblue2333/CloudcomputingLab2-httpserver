@@ -48,4 +48,6 @@ void http_format_index(char *buffer, char *path);
  */
 char *http_get_mime_type(char *file_name);
 
+void normalize_url(char *url);
+
 #endif

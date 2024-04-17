@@ -201,3 +201,30 @@ void http_format_index(char *buffer, char *path) {
   int length = strlen(path) + strlen("/index.html") + 1;
   snprintf(buffer, length, "%s/index.html", path);
 }
+
+
+void normalize_url(char *url) {
+    char *src = url;
+    char *dest = url;
+
+    // 初始化状态为非斜杠
+    int prev_char_slash = 0;
+
+    // 遍历 URL 中的每个字符
+    while (*src) {
+        // 如果当前字符是斜杠
+        if (*src == '/') {
+            // 如果前一个字符不是斜杠，则将当前字符复制到目标位置
+            if (!prev_char_slash) {
+                *dest++ = *src;
+            }
+            prev_char_slash = 1;
+        } else {
+            // 如果当前字符不是斜杠，则将当前字符复制到目标位置
+            *dest++ = *src;
+            prev_char_slash = 0;
+        }
+        src++;
+    }
+    *dest = '\0'; // 添加字符串结束符
+}

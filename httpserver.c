@@ -44,6 +44,7 @@ void handle_proxy_request(int fd) {}
 
 /* api */
 void list(int fd){
+  LOG_INFO("process GET api list");
   http_start_response(fd, 200);
   char *filetype = "application/json";
   http_send_header(fd, "Content-Type", filetype);
@@ -62,6 +63,7 @@ void list(int fd){
 }
 
 void check(int fd, struct apiRequest *request){
+  LOG_INFO("process GET api check");
   cJSON* cjson_data = NULL;
 
   // 打开文件
@@ -123,6 +125,8 @@ void check(int fd, struct apiRequest *request){
 }
 
 int upload(int fd, struct apiRequest *request){
+  LOG_INFO("process POST api upload");
+
   cJSON* cjson_data = NULL;
 
   // 打开文件
@@ -144,7 +148,6 @@ int upload(int fd, struct apiRequest *request){
   // 关闭文件
   close(src_fd);
   
-
   // 解析 JSON 字符串
   cJSON *json = cJSON_Parse(buffer);
   if (json == NULL) {
@@ -161,83 +164,145 @@ int upload(int fd, struct apiRequest *request){
       cJSON *name = cJSON_GetObjectItem(item, "name");
 
       if (strcmp(id->valuestring, request->params[0].value)==0 && strcmp(name->valuestring, request->params[1].value)==0) {
-        printf("ID: %s, Name: %s\n", id->valuestring, name->valuestring);
+        LOG_INFO("aready exist : {id:%s,name:%s}", id->valuestring, name->valuestring);
+
+        // 将当前 JSON 对象复制到一个新的 cJSON 对象中
+        cJSON *new_item = cJSON_Duplicate(item, 1);
+        // 向当前 JSON 对象添加新的属性
+        cJSON_AddStringToObject(new_item, "success", "true");
+
+        char *jsonString = cJSON_Print(new_item);
+        removeSpacesAndNewlines(jsonString);
+
         http_start_response(fd, 200);
+        http_send_header(fd, "Content-Type", "application/json");
+        char *file_size = (char *) malloc(max_file_size * sizeof(char));
+        sprintf(file_size, "%d", strlen(jsonString));
+        http_send_header(fd, "Content-Length", file_size);
         http_end_headers(fd);
+        http_send_string(fd, jsonString);
         close(fd);
+
+        // 释放 cJSON 结构
+        cJSON_Delete(json);
+        cJSON_Delete(new_item);
+        
         return 0;
       }
     }
-  // 释放 cJSON 结构
-  cJSON_Delete(json);
 
-  }else if (request->count==3)
+    LOG_INFO("not find : {id:%s,name:%s}", request->params[0].value, request->params[1].value);
+    // 创建一个新的 cJSON 对象
+    cJSON *new_cjson = cJSON_CreateObject();
+    cJSON_AddStringToObject(new_cjson, "id", request->params[0].value);
+    cJSON_AddStringToObject(new_cjson, "name", request->params[1].value);
+    cJSON_AddStringToObject(new_cjson, "success", "false");
+    char *jsonString = cJSON_Print(new_cjson);
+    removeSpacesAndNewlines(jsonString);
+
+    http_start_response(fd, 404);
+    http_send_header(fd, "Content-Type", "application/json");
+    char *file_size = (char *) malloc(max_file_size * sizeof(char));
+    sprintf(file_size, "%d", strlen(jsonString));
+    http_send_header(fd, "Content-Length", file_size);
+    http_end_headers(fd);
+    http_send_string(fd, jsonString);
+
+    cJSON_Delete(new_cjson);
+    close(fd);
+
+  } else if (request->count==3 && strcmp(request->params[2].param,"extra")==0)
   {
+    LOG_INFO("add extra : {id:%s,name:%s,extra:%s}", request->params[0].value, request->params[1].value, request->params[2].value);
     // 遍历 JSON 数组
     cJSON *item = NULL;
+    LOG_DEBUG("start loop");
     cJSON_ArrayForEach(item, json) {
       // 提取 id 和 name 字段
       cJSON *id = cJSON_GetObjectItem(item, "id");
       cJSON *name = cJSON_GetObjectItem(item, "name");
 
-      if (strcmp(id->valuestring, request->params[0].value)==0 && strcmp(name->valuestring, request->params[1].value)==0) {
-        printf("ID: %s, Name: %s\n", id->valuestring, name->valuestring);
+      LOG_DEBUG("start loop");
 
-        if(strcmp(request->params[2].param, "extra") == 0){
+      if (strcmp(id->valuestring, request->params[0].value)==0 && strcmp(name->valuestring, request->params[1].value)==0) {
+        cJSON *extra_item = cJSON_GetObjectItem(item, "extra");
+        if (extra_item==NULL){
+          LOG_DEBUG("add extra to json");
           cJSON_AddStringToObject(item, "extra", request->params[2].value);
         } else {
-          http_start_response(fd, 404);
-          http_send_header(fd, "Content-Type", "application/json");
-          http_end_headers(fd); 
-          //返回文件的字节长度
-          int src_fd2 = open("404.html",O_RDONLY);
-          http_send_file(fd, src_fd2);
-          close(src_fd);
-          close(fd);
-
-          return 0;
+          cJSON_SetValuestring(extra_item, request->params[2].value);
         }
 
-        http_start_response(fd, 200);
-        char *filetype = "application/json";
-        http_send_header(fd, "Content-Type", filetype);
-        char *file_size = (char *) malloc(max_file_size * sizeof(char));
-        char *jsonString = cJSON_Print(item);
+        // 将当前 JSON 对象复制到一个新的 cJSON 对象中
+        cJSON *new_item = cJSON_Duplicate(item, 1);
+        // 向当前 JSON 对象添加新的属性
+        cJSON_AddStringToObject(new_item, "success", "true");
+
+        char *jsonString = cJSON_Print(new_item);
         removeSpacesAndNewlines(jsonString);
-        printf("%s\n", jsonString);
+
+        http_start_response(fd, 200);
+        http_send_header(fd, "Content-Type", "application/json");
+        char *file_size = (char *) malloc(max_file_size * sizeof(char));
         sprintf(file_size, "%d", strlen(jsonString));
-        printf("%d\n", file_size);
         http_send_header(fd, "Content-Length", file_size);
         http_end_headers(fd);
         http_send_string(fd, jsonString);
         close(fd);
+
+        cJSON_Delete(new_item); 
+
+        LOG_INFO("save data.json");
+        jsonString = cJSON_Print(json);
+        removeSpacesAndNewlines(jsonString);
+        FILE *file = fopen("./data.json", "w");
+        if (file == NULL) {
+            perror("Error opening file");
+            return 1;
+        }
+
+        // 将数据缓冲区中的内容写入文件
+        size_t bytes_written = fwrite(jsonString, sizeof(char), strlen(jsonString), file);
+  
+        // 关闭文件
+        fclose(file);
+
+        // 释放 cJSON 结构
+        cJSON_Delete(json);
+
+        return 1;
       }
     }
 
-    FILE *file = fopen("./data.json", "w");
-    if (file == NULL) {
-        perror("Error opening file");
-        return 1;
-    }
-
-    char *jsonString = cJSON_Print(json);
+    LOG_INFO("not find : {id:%s,name:%s}", request->params[0].value, request->params[1].value);
+    // 创建一个新的 cJSON 对象
+    cJSON *new_cjson = cJSON_CreateObject();
+    cJSON_AddStringToObject(new_cjson, "id", request->params[0].value);
+    cJSON_AddStringToObject(new_cjson, "name", request->params[1].value);
+    cJSON_AddStringToObject(new_cjson, "extra", request->params[2].value);
+    cJSON_AddStringToObject(new_cjson, "success", "false");
+    char *jsonString = cJSON_Print(new_cjson);
     removeSpacesAndNewlines(jsonString);
 
-    // 将数据缓冲区中的内容写入文件
-    size_t bytes_written = fwrite(jsonString, sizeof(char), strlen(jsonString), file);
-    if (bytes_written != strlen(buffer)) {
-        perror("Error writing to file");
-        fclose(file);
-        return 1;
-    }
-
-    // 关闭文件
-    fclose(file);
+    http_start_response(fd, 404);
+    http_send_header(fd, "Content-Type", "application/json");
+    char *file_size = (char *) malloc(max_file_size * sizeof(char));
+    sprintf(file_size, "%d", strlen(jsonString));
+    http_send_header(fd, "Content-Length", file_size);
+    http_end_headers(fd);
+    http_send_string(fd, jsonString);
 
     // 释放 cJSON 结构
     cJSON_Delete(json);
+    cJSON_Delete(new_cjson);
+    close(fd);
+    return;
   }
-  
+
+  LOG_INFO("wrong: invalid url");
+  // 释放 cJSON 结构
+  cJSON_Delete(json);
+  close(fd);
   return;
 }
 
@@ -327,7 +392,7 @@ void serve_file(int fd, char *path) {
  * connection, calls request_handler with the accepted fd number.
  */
 
-void handle_files_request(int fd) {
+void handle_request(int fd) {
   struct http_request *request = http_request_parse(fd);
 
   if (request == NULL || request->path[0] != '/') {  
@@ -352,79 +417,107 @@ void handle_files_request(int fd) {
   path[1] = '/';
   memcpy(path + 2, request->path, strlen(request->path) + 1);
 
-  LOG_DEBUG("path=[%s]", path);
+  LOG_DEBUG("path= %s", path);
 
-  if (strncmp(request->path, "/api", 4) == 0)
-  {
-    struct apiRequest api_request;
-    initapiRequest(&api_request);
-    parseQueryString(request->path, &api_request);
-    if(IS_DEBUG){
-      printf("api_type=%s \n", api_request.api_type);  
-    }
-
-    if (strcmp(api_request.api_type, "list") == 0){
-      list(fd);
-    } else if (strcmp(api_request.api_type, "check") == 0)
+  if (strcmp(request->method, "GET")==0){
+    if (strncmp(request->path, "/api", 4) == 0)
     {
-      if (api_request.count==2 && strcmp(api_request.params[0].param,"id")==0 
-          && strcmp(api_request.params[1].param,"name")==0){
-        check(fd, &api_request);
+      LOG_INFO("start process GET api");
+      struct apiRequest api_request;
+      initapiRequest(&api_request);
+      parseQueryString(request->path, &api_request);
 
-      }else{
-      http_start_response(fd, 404);
-      http_send_header(fd, "Content-Type", "text/html");
-      http_end_headers(fd);
+      if (strcmp(api_request.api_type, "list") == 0){
+        list(fd);
+      } else if (strcmp(api_request.api_type, "check") == 0)
+      {
+        if (api_request.count==2 && strcmp(api_request.params[0].param,"id")==0 
+            && strcmp(api_request.params[1].param,"name")==0){
+          check(fd, &api_request);
+          close(fd);
+          return;
+        }else{
+        http_start_response(fd, 404);
+        http_send_header(fd, "Content-Type", "text/html");
+        http_end_headers(fd);
 
-      int src_fd = open("404.html",O_RDONLY);
-      http_send_file(fd, src_fd);
-      close(src_fd);
-      return;
-      }
-    }else if (strcmp(api_request.api_type, "upload") == 0)
-    {
-      parseParam(request->content, &api_request);
-      if (api_request.count>=2 && strcmp(api_request.params[0].param,"id")==0 
-          && strcmp(api_request.params[1].param,"name")==0){
-        upload(fd, &api_request);
+        int src_fd = open("404.html",O_RDONLY);
+        http_send_file(fd, src_fd);
+        close(src_fd);
         return;
-      }else{
-      http_start_response(fd, 404);
-      http_send_header(fd, "Content-Type", "text/html");
-      http_end_headers(fd);
+        }
+      }
+    } else {
+      LOG_INFO("start process file request");
 
-      int src_fd = open("404.html",O_RDONLY);
-      http_send_file(fd, src_fd);
-      close(src_fd);
+      struct stat sb;
+      normalize_url(path);
+      int exist = stat(path, &sb);
+      LOG_DEBUG("file exist: %d", exist);
+      
+      if (strcmp(path,"./")==0){
+        path = "./index.html";
+      }
+
+      if (exist == 0) { 
+        serve_file(fd, path);
+      } else {
+        LOG_INFO("wrong: invalid file url");
+        http_start_response(fd, 404);
+        http_send_header(fd, "Content-Type", "text/html");
+        http_end_headers(fd);
+
+        int src_fd = open("404.html",O_RDONLY);
+        http_send_file(fd, src_fd);
+        close(src_fd);
+      }
+      close(fd);
       return;
+    }
+  } else if (strcmp(request->method, "POST")==0)
+  {
+    if (strncmp(request->path, "/api", 4) == 0){
+      LOG_INFO("start process POST api");
+      struct apiRequest api_request;
+      initapiRequest(&api_request);
+      parseQueryString(request->path, &api_request);
+      
+      if (strcmp(api_request.api_type, "upload") == 0){
+        parseParam(request->content, &api_request);
+        if (api_request.count>=2 && strcmp(api_request.params[0].param,"id")==0 
+            && strcmp(api_request.params[1].param,"name")==0){
+          upload(fd, &api_request);
+          return;
+        } else
+        {
+          LOG_INFO("wrong: params problem");
+        }
+        
+      } else {
+        LOG_INFO("wrong: invalid api tpye");
+        http_start_response(fd, 404);
+        http_send_header(fd, "Content-Type", "text/html");
+        http_end_headers(fd);
+
+        int src_fd = open("404.html",O_RDONLY);
+        http_send_file(fd, src_fd);
+        close(src_fd);
+        close(fd);
+        return;
       }
     }
-    
-  } else {
-
-    struct stat sb;
-    int exist = stat(path, &sb);
-
-    LOG_DEBUG("file exist: %d", exist);
-    
-    if (strcmp(path,".//")==0){
-      path = ".//index.html";
-    }
-
-    if (exist == 0) { 
-      serve_file(fd, path);
-    } else {
-      http_start_response(fd, 404);
-      http_send_header(fd, "Content-Type", "text/html");
-      http_end_headers(fd);
-
-      int src_fd = open("404.html",O_RDONLY);
-      http_send_file(fd, src_fd);
-      close(src_fd);
-    }
-    close(fd);
-    return;
   }
+
+  LOG_INFO("wrong: invalid url");
+  http_start_response(fd, 404);
+  http_send_header(fd, "Content-Type", "text/html");
+  http_end_headers(fd);
+
+  int src_fd = open("404.html",O_RDONLY);
+  http_send_file(fd, src_fd);
+  close(src_fd);
+  close(fd);
+  return;
 }
 
 
@@ -534,12 +627,12 @@ int main(int argc, char **argv) {
   server_port = 8080;
   void (*request_handler)(int) = NULL;
 
-  request_handler = handle_files_request;
+  request_handler = handle_request;
 
   int i;
   for (i = 1; i < argc; i++) {  // 解析参数
     if (strcmp("--files", argv[i]) == 0) {
-      request_handler = handle_files_request;
+      request_handler = handle_request;
       server_files_directory = argv[++i];
       if (!server_files_directory) {
         fprintf(stderr, "Expected argument after --files\n");

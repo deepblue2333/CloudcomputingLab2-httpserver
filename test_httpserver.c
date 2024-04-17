@@ -1,7 +1,10 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <curl/curl.h>
 #include <CUnit/Basic.h>
+
+#include "libhttp.h"
 
 static size_t write_callback(void *contents, size_t size, size_t nmemb, void *userp) {
     ((char *)userp)[size * nmemb] = '\0'; // 确保数据字符串结束
@@ -9,20 +12,11 @@ static size_t write_callback(void *contents, size_t size, size_t nmemb, void *us
     return size * nmemb;
 }
 
-
-/**
- * 函数名: test_http_get
- * 功能: 测试http_get方法
- * 参数:
- *   - int a: 第一个整数
- *   - int b: 第二个整数
- * 返回值: 返回两个整数的和
- * 示例:
- *   int result = calculateSum(5, 3); // result将会是8
- */
+// 测试get方法
 void test_http_get(void) {
     CURL *curl;
     CURLcode res;
+    int http_code;
     char response[4096] = ""; // 创建字符数组缓存接收到的http消息
 
     curl = curl_easy_init();
@@ -35,6 +29,23 @@ void test_http_get(void) {
         CU_ASSERT_STRING_NOT_EQUAL(response, ""); // 判断数组是否非空
         curl_easy_cleanup(curl); // 清理CURL资源
     }
+
+    curl = curl_easy_init();
+    if(curl) {
+        curl_easy_setopt(curl, CURLOPT_URL, "localhost:8080/"); // 指定测试url
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback); // 指定回调函数
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)response); // 将返回数据存入response
+        res = curl_easy_perform(curl); // 发送curl请求
+        CU_ASSERT(res == CURLE_OK); // 使用宏断言请求成功执行
+        // 获取 HTTP 响应状态码
+        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+        // 使用断言判断状态码是否为 404
+        CU_ASSERT_EQUAL(http_code, 404);
+        CU_ASSERT_STRING_NOT_EQUAL(response, ""); // 判断数组是否非空
+        curl_easy_cleanup(curl); // 清理CURL资源
+    }
+
+
 }
 
 void test_http_post(void) {

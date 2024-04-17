@@ -1,0 +1,8 @@
+{
+  "files.associations": {
+    "http_parser.h": "c",
+    "libhttp.h": "c",
+    "curl.h": "c",
+    "random": "c"
+  }
+}
