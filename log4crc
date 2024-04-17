@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<!DOCTYPE log4c SYSTEM ""> 
+<log4c>
+    <config>
+        <bufsize>0</bufsize> 
+        <debug level="2"/>
+        <nocleanup>0</nocleanup>
+        <reread>1</reread>
+    </config>
+    <category name="httpserver" priority="debug" appender="stdout" />
+    <appender name="stdout" type="stream" layout="basic"/>
+    <layout name="basic" type="basic"/>
+</log4c>
