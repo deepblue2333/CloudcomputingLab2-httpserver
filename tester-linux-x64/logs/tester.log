@@ -1,0 +1,180 @@
+2024-04-18 20:36:17 [TRACE] Checking tools...
+2024-04-18 20:36:17 [TRACE] Checking tools finished.
+2024-04-18 20:36:17 [TRACE] Building server...
+2024-04-18 20:36:18 [TRACE] Building server finished.
+2024-04-18 20:36:18 [TRACE] Testing http...
+2024-04-18 20:36:18 [TRACE] Waiting in 1s for server to start...
+2024-04-18 20:36:19 [INFO ] GET: Path /index.html pass.
+2024-04-18 20:36:19 [INFO ] GET: Path /error pass.
+2024-04-18 20:36:19 [ERROR] The content of path /api/list is different from source ./files/json/data.json
+
+2024-04-18 20:36:19 [DEBUG] You should recv:
+[{"id":1,"name":"Foo"},{"id":2,"name":"Bar"},{"id":3,"name":"Foo"},{"id":4,"name":"Bar"}]
+2024-04-18 20:36:19 [DEBUG] You actually recv:
+[{"id":"1","name":"Foo","extra":"bar"},{"id":"2","name":"Bar"},{"id":"3","name":"FooBar"},{"id":"4","name":"Foo"}]
+
+2024-04-18 20:36:19 [ERROR] The content of path /api/search?id=1&name=Foo is different from source ./files/json/search.json
+
+2024-04-18 20:36:19 [DEBUG] You should recv:
+[{"id":1,"name":"Foo"}]
+2024-04-18 20:36:19 [DEBUG] You actually recv:
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="/styles.css"/>
+    <title>404 Not Found</title>
+</head>
+<body>
+    <h1>
+        404 Not Found
+    </h1>
+</body>
+</html>
+
+2024-04-18 20:36:19 [INFO ] GET: Path /test/test.html pass.
+2024-04-18 20:36:19 [ERROR] The content of path /api/upload is different from source ./files/json/upload.json
+
+2024-04-18 20:36:19 [DEBUG] You should recv:
+{"id":1,"name":"Foo"}
+2024-04-18 20:36:19 [DEBUG] You actually recv:
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="/styles.css"/>
+    <title>404 Not Found</title>
+</head>
+<body>
+    <h1>
+        404 Not Found
+    </h1>
+</body>
+</html>
+
+2024-04-18 20:36:19 [TRACE] Testing HTTP finished.
+2024-04-18 20:36:19 [WARN ] Trying to kill the HTTP Server...
+2024-04-18 20:36:19 [TRACE] Waiting in 1s for server to stop...
+2024-04-18 20:36:20 [TRACE] The HTTP Server is stopped.
+2024-04-18 20:36:20 [TRACE] Testing pipelinging...
+2024-04-18 20:36:20 [TRACE] Waiting in 1s for server to start...
+2024-04-18 20:36:21 [ERROR] The content of pipelining paths /index.html /404.html /501.html  is different from single requests
+
+2024-04-18 20:36:21 [DEBUG] You should recv:
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="/styles.css"/>
+    <title>Simple HTTP Server</title>
+</head>
+<body>
+    <h1>
+        Simple HTTP Server
+    </h1>
+</body>
+</html><!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="/styles.css"/>
+    <title>404 Not Found</title>
+</head>
+<body>
+    <h1>
+        404 Not Found
+    </h1>
+</body>
+</html><!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="/styles.css"/>
+    <title>501 Not Implemented</title>
+</head>
+<body>
+    <h1>
+        501 Not Implemented
+    </h1>
+</body>
+</html>
+2024-04-18 20:36:21 [DEBUG] You actually recv:
+HTTP/1.0 200 OK
+Content-Type: text/html
+Content-Length: 229<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="/styles.css"/>
+    <title>Simple HTTP Server</title>
+</head>
+<body>
+    <h1>
+        Simple HTTP Server
+    </h1>
+</body>
+</html>
+
+2024-04-18 20:36:21 [ERROR] The content of pipelining paths /404.html /index.html /501.html  is different from single requests
+
+2024-04-18 20:36:21 [DEBUG] You should recv:
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="/styles.css"/>
+    <title>404 Not Found</title>
+</head>
+<body>
+    <h1>
+        404 Not Found
+    </h1>
+</body>
+</html><!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="/styles.css"/>
+    <title>Simple HTTP Server</title>
+</head>
+<body>
+    <h1>
+        Simple HTTP Server
+    </h1>
+</body>
+</html><!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="/styles.css"/>
+    <title>501 Not Implemented</title>
+</head>
+<body>
+    <h1>
+        501 Not Implemented
+    </h1>
+</body>
+</html>
+2024-04-18 20:36:21 [DEBUG] You actually recv:
+HTTP/1.0 200 OK
+Content-Type: text/html
+Content-Length: 219<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="/styles.css"/>
+    <title>404 Not Found</title>
+</head>
+<body>
+    <h1>
+        404 Not Found
+    </h1>
+</body>
+</html>
+
+2024-04-18 20:36:21 [TRACE] Testing pipe finished.
+2024-04-18 20:36:21 [WARN ] Trying to kill the HTTP Server...
+2024-04-18 20:36:21 [TRACE] Waiting in 1s for server to stop...
+2024-04-18 20:36:22 [TRACE] The HTTP Server is stopped.
+2024-04-18 20:36:22 [TRACE] Testing proxy...
+2024-04-18 20:36:22 [TRACE] Waiting in 1s for server to start...

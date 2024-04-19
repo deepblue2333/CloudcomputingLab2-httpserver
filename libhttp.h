@@ -30,7 +30,7 @@ struct http_request {
   size_t content_length;
 };
 
-
+struct http_request *http_request_string_parse(char *read_buffer);
 struct http_request *http_request_parse(int fd);
 
 

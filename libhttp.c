@@ -14,20 +14,8 @@ void http_fatal_error(char *message) {
   exit(ENOBUFS);
 }
 
-struct http_request *http_request_parse(int fd) {
+struct http_request *http_request_string_parse(char *read_buffer) {
   struct http_request *request = malloc(sizeof(struct http_request));
-  if (!request) http_fatal_error("Malloc failed");
-
-  char *read_buffer = malloc(LIBHTTP_REQUEST_MAX_SIZE + 1);  // read缓冲区
-  if (!read_buffer) http_fatal_error("Malloc failed");
-
-  int bytes_read = read(fd, read_buffer, LIBHTTP_REQUEST_MAX_SIZE);
-  read_buffer[bytes_read] = '\0'; /* Always null-terminate. */
-
-  if(IS_DEBUG)
-  {
-  printf("%s", read_buffer);
-  }
 
   char *read_start, *read_end;
   size_t read_size;
@@ -112,7 +100,21 @@ struct http_request *http_request_parse(int fd) {
   free(request);
   free(read_buffer);
   return NULL;
+}
 
+struct http_request *http_request_parse(int fd) {
+  char *read_buffer = malloc(LIBHTTP_REQUEST_MAX_SIZE + 1);  // read缓冲区
+  if (!read_buffer) http_fatal_error("Malloc failed");
+
+  int bytes_read = read(fd, read_buffer, LIBHTTP_REQUEST_MAX_SIZE);
+  read_buffer[bytes_read] = '\0'; /* Always null-terminate. */
+
+  if(IS_DEBUG)
+  {
+  printf("%s", read_buffer);
+  }
+
+  http_request_string_parse(read_buffer);
 }
 
 
@@ -145,7 +147,7 @@ char* http_get_response_message(int status_code) {
 
 void http_start_response(int fd, int status_code) {
   dprintf(fd, "HTTP/1.0 %d %s\r\n", status_code,
-      http_get_response_message(status_code));
+    http_get_response_message(status_code));
 }
 
 void http_send_header(int fd, char *key, char *value) {

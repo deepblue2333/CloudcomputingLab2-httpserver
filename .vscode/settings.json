@@ -3,6 +3,9 @@
     "http_parser.h": "c",
     "libhttp.h": "c",
     "curl.h": "c",
-    "random": "c"
-  }
+    "random": "c",
+    "wq.h": "c",
+    "system_error": "c"
+  },
+  "cmake.sourceDirectory": "/root/chengyu/cloudcomputing-lab2"
 }

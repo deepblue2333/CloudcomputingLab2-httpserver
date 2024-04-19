@@ -14,11 +14,13 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <unistd.h>
+
 #include <log4c.h>
 
 #include "libhttp.h"
 #include "cJSON.h"
 #include "map.h"
+#include "wq.h"
 
 #define LOG_INFO(message, args...) \
   log4c_category_log(log4c_category_get("httpserver"), LOG4C_PRIORITY_INFO, message, ##args)
@@ -26,19 +28,21 @@
 #define LOG_DEBUG(message, args...) \
   log4c_category_log(log4c_category_get("httpserver"), LOG4C_PRIORITY_DEBUG, message, ##args)
 
+#define LOG_ERROR(message, args...) \
+  log4c_category_log(log4c_category_get("httpserver"), LOG4C_PRIORITY_ERROR, message, ##args)
 
-#define IS_DEBUG 1
+#define BUFFER_SIZE 2048
 
+wq_t work_queue;  // Only used by poolserver
 int num_threads;  // Only used by poolserver  线程数量
+int server_address; // Default value: 127.0.0.1 默认服务地址
 int server_port;  // Default value: 8000   默认服务端口
-char *server_files_directory; // 服务器工作路径
-char *server_proxy_hostname; // 服务器代理主机名
+char *server_files_directory = "static"; // 服务器工作路径
+char *server_proxy_address; // 服务器代理地址
 int server_proxy_port; // 代理服务器端口
 log4c_category_t* mylog; // 声明日志
 
 int max_file_size = 100; 
-
-void handle_proxy_request(int fd) {}
 
 // step1 实现http GET方法
 
@@ -393,6 +397,28 @@ void serve_file(int fd, char *path) {
  */
 
 void handle_request(int fd) {
+
+  // char buffer[BUFFER_SIZE];
+  // int read_bytes;
+  // int read_num = 0;
+
+  // // 循环读取客户端发送的数据
+  // while ((read_bytes = recv(fd, buffer, BUFFER_SIZE, 0)) > 0) {
+  //     buffer[read_bytes] = '\0';  // Null-terminate to create a string
+  //     printf("Received request %d: %s\n",++read_num, buffer);
+
+  //     // 简单响应消息
+  //     char *response = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 12\r\n\r\nHello world!\n";
+  //     send(fd, response, strlen(response), 0);
+
+  //     // 检查是否需要关闭连接（非管线化请求）
+  //     if (strstr(buffer, "Connection: close") != NULL) {
+  //       break;
+  //     }
+  // }
+
+  // close(fd); 
+
   struct http_request *request = http_request_parse(fd);
 
   if (request == NULL || request->path[0] != '/') {  
@@ -437,6 +463,7 @@ void handle_request(int fd) {
           close(fd);
           return;
         }else{
+        LOG_INFO("wrong: check failure");
         http_start_response(fd, 404);
         http_send_header(fd, "Content-Type", "text/html");
         http_end_headers(fd);
@@ -444,6 +471,7 @@ void handle_request(int fd) {
         int src_fd = open("404.html",O_RDONLY);
         http_send_file(fd, src_fd);
         close(src_fd);
+        close(fd);
         return;
         }
       }
@@ -452,12 +480,15 @@ void handle_request(int fd) {
 
       struct stat sb;
       normalize_url(path);
-      int exist = stat(path, &sb);
-      LOG_DEBUG("file exist: %d", exist);
       
       if (strcmp(path,"./")==0){
         path = "./index.html";
       }
+
+      int exist = stat(path, &sb);
+      LOG_DEBUG("file exist: %d", exist);
+
+      LOG_DEBUG("now path is %s", path);
 
       if (exist == 0) { 
         serve_file(fd, path);
@@ -520,6 +551,127 @@ void handle_request(int fd) {
   return;
 }
 
+/* Helper function for Proxy handler */
+
+struct fd_pair {
+    int *read_fd;
+    int *write_fd;
+    pthread_cond_t* cond;
+    int *finished;
+    char* type;
+    unsigned long id;
+};
+
+void* relay_message(void* endpoints) {
+  // 类型转换，将void*转换为更具体的struct fd_pair*，以便访问结构体成员
+  struct fd_pair* pair = (struct fd_pair*)endpoints;   
+  
+  char buffer[4096]; // 创建一个字符数组作为缓冲区，用于存储从文件描述符读取的数据
+  int read_ret, write_ret; // 定义两个整型变量来存储read和write函数的返回值
+  LOG_INFO("%s thread %lu start to work", pair->type, pair->id); // 打印消息，表示线程开始工作，输出线程类型和ID
+
+  while((read_ret = read(*pair->read_fd, buffer, sizeof(buffer)-1)) > 0) { // 循环读取数据，直到没有数据可读或发生错误
+    write_ret = http_send_data(*pair->write_fd, buffer, read_ret); // 将读取的数据发送到写文件描述符
+    if(write_ret < 0) break; // 如果写操作失败，退出循环
+  }
+  
+  if(read_ret <= 0) // 如果读操作失败或读取到的数据长度为0
+    LOG_ERROR("%s thread %lu read failed, status %d", pair->type, pair->id, read_ret); // 打印读操作失败的消息
+  if(write_ret <= 0) // 如果写操作失败
+    LOG_ERROR("%s thread %lu write failed, status %d", pair->type, pair->id, write_ret); // 打印写操作失败的消息
+
+*pair->finished = 1; // 设置完成标志为1，表示当前线程的工作已经完成
+pthread_cond_signal(pair->cond); // 发送条件变量信号，唤醒在此条件变量上等待的其他线程
+
+LOG_INFO("%s thread %lu exited", pair->type, pair->id);
+return NULL;
+}
+
+
+static unsigned long id;
+pthread_mutex_t id_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+void handle_proxy_request(int fd) {
+  LOG_INFO("start process proxy request");
+  struct sockaddr_in target_address; // 定义目标服务器的socket地址结构
+  memset(&target_address, 0, sizeof(target_address)); // 初始化地址结构，将其内存空间清零
+  target_address.sin_family = AF_INET; // 设置地址类型为IPv4
+  target_address.sin_port = htons(server_proxy_port); // 设置目标端口号，并转换为网络字节顺序
+
+  // 创建一个IPv4的TCP套接字，用于与代理目标通信
+  int target_fd = socket(PF_INET, SOCK_STREAM, 0);
+  if (target_fd == -1) {
+    fprintf(stderr, "Failed to create a new socket: error %d: %s", errno, strerror(errno));
+    close(fd);
+    exit(errno);
+  }
+
+  // 尝试连接到目标代理服务器
+  int connection_status = connect(target_fd, (struct sockaddr*) &target_address, sizeof(target_address));
+  if (connection_status < 0) {
+    // 这里不确定是否需要
+    http_request_parse(fd);
+
+    // 开始发送HTTP响应，状态码为502（代理错误）
+    http_start_response(fd, 502);
+    http_send_header(fd, "Content-Type", "text/html"); // 发送响应头部，设置内容类型为text/html
+    http_end_headers(fd); // 结束头部发送
+    close(target_fd);
+    close(fd);
+    return;
+  }
+
+  // 使用mutex和condition变量来同步不同线程之间的操作
+  unsigned long local_id; // 本地线程标识符
+  pthread_mutex_lock(&id_mutex); // 上锁
+  local_id = id++; // 获取并更新线程ID
+  pthread_mutex_unlock(&id_mutex); // 解锁
+
+  // 输出当前线程将处理的代理请求ID
+  LOG_INFO("Thread %lu will handle proxy request %lu.", pthread_self(), local_id);
+
+  // 定义用于读写操作的文件描述符对
+  struct fd_pair pairs[2];
+  pthread_mutex_t mutex; // 定义互斥锁
+  pthread_cond_t cond; // 定义条件变量
+  int finished = 0; // 定义完成标志
+  pthread_mutex_init(&mutex, NULL); // 初始化互斥锁
+  pthread_cond_init(&cond, NULL); // 初始化条件变量
+
+  // 设置文件描述符对和其他相关参数
+  pairs[0].read_fd = &fd;
+  pairs[0].write_fd = &target_fd;
+  pairs[0].finished = &finished;
+  pairs[0].type = "request";
+  pairs[0].cond = &cond;
+  pairs[0].id = local_id;
+
+  pairs[1].read_fd = &target_fd;
+  pairs[1].write_fd = &fd;
+  pairs[1].finished = &finished;
+  pairs[1].type = "response";
+  pairs[1].cond = &cond;
+  pairs[1].id = local_id;
+
+  // 创建两个线程，分别用于处理请求和响应的转发
+  pthread_t threads[2];
+  pthread_create(&threads[0], NULL, relay_message, &pairs[0]);
+  pthread_create(&threads[1], NULL, relay_message, &pairs[1]);
+
+  // 如果还未完成，则在条件变量上等待
+  if(!finished) pthread_cond_wait(&cond, &mutex);
+
+  // 关闭文件描述符，清理资源
+  close(fd);
+  close(target_fd);
+
+  // 销毁互斥锁和条件变量
+  pthread_mutex_destroy(&mutex);
+  pthread_cond_destroy(&cond);
+
+  // 输出代理请求完成的信息
+  LOG_INFO("Socket closed, proxy request %lu finished.\n", local_id);
+}
 
 
 void serve_forever(int *socket_number, void (*request_handler)(int)) {
@@ -527,6 +679,7 @@ void serve_forever(int *socket_number, void (*request_handler)(int)) {
   struct sockaddr_in server_address, client_address;
   size_t client_address_length = sizeof(client_address);
   int client_socket_number;
+  pthread_t thread_id;
 
   // Creates a socket for IPv4 and TCP.
   *socket_number = socket(PF_INET, SOCK_STREAM, 0);  // 为IPv4和TCP创建套接口
@@ -571,26 +724,51 @@ void serve_forever(int *socket_number, void (*request_handler)(int)) {
 
   /* PART 1 END */
   printf("Listening on port %d...\n", server_port);
-  
+
+  int socket_num = 0;
+
+  // 接受连接
   while (1) {
-    client_socket_number = accept(*socket_number,
+      client_socket_number = accept(*socket_number,
         (struct sockaddr *) &client_address,
         (socklen_t *) &client_address_length);
-    if (client_socket_number < 0) {
-      perror("Error accepting socket");
-      continue;
-    }
+      if (client_socket_number < 0) {
+        perror("Error accepting socket");
+        free(client_socket_number);
+        continue;
+      }
 
+      printf("accept socket %d \n", ++socket_num);
 
-    printf("Accepted connection from %s on port %d\n",
-        inet_ntoa(client_address.sin_addr),
-        client_address.sin_port);
+      // 创建一个新的线程来处理连接
+      if (pthread_create(&thread_id, NULL, request_handler, client_socket_number) != 0) {
+          perror("Failed to create thread");
+          free(client_socket_number);
+      }
 
-    request_handler(client_socket_number);  // BASICSERVER
+      pthread_detach(thread_id); // 不需要主线程等待这个新线程
   }
+  
+  // while (1) {
+  //   client_socket_number = accept(*socket_number,
+  //       (struct sockaddr *) &client_address,
+  //       (socklen_t *) &client_address_length);
+  //   if (client_socket_number < 0) {
+  //     perror("Error accepting socket");
+  //     continue;
+  //   }
+
+
+  //   printf("Accepted connection from %s on port %d\n",
+  //       inet_ntoa(client_address.sin_addr),
+  //       client_address.sin_port);
+
+  //   request_handler(client_socket_number);  // BASICSERVER
+  // }
 
   shutdown(*socket_number, SHUT_RDWR);  // 先关闭其读写功能,防止数据丢失
   close(*socket_number);
+  return;
 }
 
 
@@ -650,10 +828,10 @@ int main(int argc, char **argv) {
       char *colon_pointer = strchr(proxy_target, ':');
       if (colon_pointer != NULL) {
         *colon_pointer = '\0';
-        server_proxy_hostname = proxy_target;
+        server_proxy_address = proxy_target;
         server_proxy_port = atoi(colon_pointer + 1);
       } else {
-        server_proxy_hostname = proxy_target;
+        server_proxy_address = proxy_target;
         server_proxy_port = 80;
       }
     } else if (strcmp("--port", argv[i]) == 0) {
@@ -663,14 +841,16 @@ int main(int argc, char **argv) {
         exit_with_usage();
       }
       server_port = atoi(server_port_string);
-    } else if (strcmp("--num-threads", argv[i]) == 0) {
+    } else if (strcmp("--threads", argv[i]) == 0) {
       char *num_threads_str = argv[++i];
       if (!num_threads_str || (num_threads = atoi(num_threads_str)) < 1) {
-        fprintf(stderr, "Expected positive integer after --num-threads\n");
+        fprintf(stderr, "Expected positive integer after --threads\n");
         exit_with_usage();
       }
     } else if (strcmp("--help", argv[i]) == 0) {
       exit_with_usage();
+    } else if (strcmp("--ip", argv[i]) == 0) {
+      char *server_address_string = argv[++i];
     } else {
       fprintf(stderr, "Unrecognized option: %s\n", argv[i]);
       exit_with_usage();

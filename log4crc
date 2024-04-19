@@ -1,13 +1,22 @@
 <?xml version="1.0" encoding="ISO-8859-1"?>
-<!DOCTYPE log4c SYSTEM ""> 
+<!DOCTYPE log4c SYSTEM "">
 <log4c>
     <config>
-        <bufsize>0</bufsize> 
+        <bufsize>0</bufsize>
         <debug level="2"/>
         <nocleanup>0</nocleanup>
         <reread>1</reread>
     </config>
-    <category name="httpserver" priority="debug" appender="stdout" />
+    <category name="httpserver" priority="debug" appender="stdout httpserver-fileout" />
+    <category name="proxyserver" priority="debug" appender="stdout proxyserver-fileout" />
     <appender name="stdout" type="stream" layout="basic"/>
+    <appender name="httpserver-fileout" type="file" layout="basic">
+        <param name="file" value="./httpserver-log.txt" />
+        <param name="flags" value="w" />
+    </appender>
+    <appender name="proxyserver-fileout" type="file" layout="basic">
+        <param name="file" value="./proxyserver-log.txt" />
+        <param name="flags" value="w" />
+    </appender>
     <layout name="basic" type="basic"/>
 </log4c>
